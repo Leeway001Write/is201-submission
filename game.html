@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Remote Control Designer V3</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --panel-bg: #252525;
+            --accent: #3b82f6;
+            --text: #e5e5e5;
+            --border: #404040;
+            --grid-color: rgba(255,255,255,0.05);
+        }
+
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+        
+        body {
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Bar */
+        header {
+            height: 50px;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            z-index: 10;
+        }
+
+        h1 { font-size: 1rem; margin: 0; }
+        
+        .mode-switch {
+            display: flex;
+            background: #000;
+            border-radius: 20px;
+            padding: 2px;
+        }
+        
+        .mode-btn {
+            padding: 5px 15px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: 0.2s;
+        }
+        
+        .mode-btn.active { background: var(--accent); color: white; font-weight: bold; }
+
+        /* Main Workspace */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* The Remote Canvas Container */
+        .canvas-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        #remote-canvas {
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 16 / 9;
+            background-color: #2a2a2a;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 1px solid var(--border);
+            background-image: linear-gradient(var(--grid-color) 1px, transparent 1px),
+            linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden;
+        }
+
+        #remote-canvas.play-mode {
+            background-image: none;
+            border-color: transparent;
+        }
+
+        /* Tools / Properties Panel */
+        .controls-panel {
+            height: 35vh;
+            min-height: 200px;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
+        }
+
+        .tabs { display: flex; border-bottom: 1px solid var(--border); }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; border-bottom: 2px solid transparent; font-size: 0.9rem;}
+        .tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+
+        .panel-content { padding: 15px; overflow-y: auto; flex: 1; }
+        .hidden { display: none !important; }
+
+        /* Widget Palette Grid */
+        .widget-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .widget-btn {
+            background: var(--bg-color);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.8rem;
+        }
+        .widget-btn:active { transform: scale(0.95); }
+
+        /* Property Inputs */
+        .prop-group { margin-bottom: 15px; }
+        .prop-group label { display: block; font-size: 0.75rem; color: #888; margin-bottom: 5px; }
+        .prop-group input[type="text"], 
+        .prop-group input[type="number"], 
+        .prop-group select {
+            width: 100%;
+            background: var(--bg-color);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        
+        .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .checkbox-row input { width: 18px; height: 18px; }
+
+        .prop-row { display: flex; gap: 10px; }
+
+        .action-btn {
+            width: 100%; padding: 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; margin-top: 10px;
+        }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-success { background: #22c55e; color: white; }
+
+        /* --- ELEMENT STYLING --- */
+        .element {
+            position: absolute;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        .element.selected { outline: 1px dashed var(--accent); z-index: 100; }
+        
+        /* Resize Handle */
+        .resize-handle {
+            position: absolute;
+            bottom: -5px; right: -5px;
+            width: 15px; height: 15px;
+            background: var(--accent);
+            border: 2px solid white;
+            border-radius: 3px;
+            cursor: nwse-resize;
+            display: none;
+            z-index: 101;
+        }
+        .element.selected .resize-handle { display: block; }
+
+        /* Button Styling */
+        .el-btn { border-radius: 8px; font-weight: bold; text-align: center; transition: 0.1s; box-shadow: 0 4px 0 rgba(0,0,0,0.3); }
+        .el-btn:active, .el-btn.toggled { transform: translateY(4px); box-shadow: none; }
+        .el-btn.toggled { filter: brightness(1.2); border: 2px solid white;}
+        .el-btn.shape-ellipse { border-radius: 50%; }
+
+        /* Joystick Styling */
+        .el-joystick { 
+             border: 1px dashed rgba(255,255,255,0.2);
+             background: rgba(0,0,0,0.1);
+             border-radius: 8px;
+        }
+        
+        .joy-visual {
+            position: absolute;
+            width: 80px; height: 80px;
+            pointer-events: none;
+            /* Default Center */
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%);
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        .joy-base {
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 50%;
+            position: absolute;
+        }
+
+        .joy-head {
+            width: 40%; height: 40%; 
+            background: var(--accent); 
+            border-radius: 50%;
+            position: relative;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        /* Dynamic Joystick logic */
+        .el-joystick.dynamic { background: rgba(0,255,0,0.05); }
+        
+        /* Play mode: hide zone border/bg */
+        #remote-canvas.play-mode .el-joystick.dynamic { 
+            border: none; background: transparent; 
+        }
+        
+        /* Play mode: hide visual until active */
+        #remote-canvas.play-mode .el-joystick.dynamic .joy-visual { 
+            display: none; 
+        }
+        #remote-canvas.play-mode .el-joystick.dynamic.active .joy-visual { 
+            display: flex; 
+        }
+
+        .el-slider { background: #333; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        .slider-track { width: 80%; height: 4px; background: #555; position: relative; border-radius: 2px; pointer-events: none;}
+        .slider-handle { 
+            width: 20px; height: 20px; background: white; border-radius: 50%; 
+            position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        .el-slider.vertical .slider-track { width: 4px; height: 80%; }
+        .el-slider.vertical .slider-handle { top: 100%; left: 50%; }
+
+        .el-label { color: inherit; font-size: inherit; pointer-events: none; }
+
+        /* JSON Modal */
+        #json-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 999; display: flex; align-items: center; justify-content: center;
+        }
+        #json-textarea { width: 80%; height: 60%; background: #111; color: #0f0; border: 1px solid #333; font-family: monospace; padding: 10px; }
+        .modal-controls { margin-top: 10px; display: flex; gap: 10px;}
+
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Remote<span>UI</span> v3</h1>
+    <div class="mode-switch">
+        <div class="mode-btn active" id="btn-edit" onclick="setMode('edit')">Edit</div>
+        <div class="mode-btn" id="btn-play" onclick="setMode('play')">Play</div>
+    </div>
+    <div style="font-size: 1.2rem; cursor: pointer;" onclick="toggleExport()">⚙️</div>
+</header>
+
+<div class="workspace">
+    <div class="canvas-wrapper">
+        <div id="remote-canvas">
+            </div>
+    </div>
+
+    <div class="controls-panel" id="panel-edit">
+        <div class="tabs">
+            <div class="tab active" id="tab-add" onclick="switchTab('add')">Add Item</div>
+            <div class="tab" id="tab-props" onclick="switchTab('props')">Properties</div>
+        </div>
+
+        <div id="view-add" class="panel-content">
+            <div class="widget-grid">
+                <div class="widget-btn" onclick="addElement('button')">
+                    <div style="width:20px; height:20px; background:var(--accent); border-radius:4px;"></div>
+                    Button
+                </div>
+                <div class="widget-btn" onclick="addElement('joystick')">
+                    <div style="width:20px; height:20px; border:2px solid var(--accent); border-radius:50%;"></div>
+                    Joystick
+                </div>
+                <div class="widget-btn" onclick="addElement('slider')">
+                    <div style="width:20px; height:6px; background:var(--accent); border-radius:3px;"></div>
+                    Slider H
+                </div>
+                <div class="widget-btn" onclick="addElement('slider-v')">
+                    <div style="width:6px; height:20px; background:var(--accent); border-radius:3px;"></div>
+                    Slider V
+                </div>
+                <div class="widget-btn" onclick="addElement('label')">
+                    <span>Abc</span>
+                    Text
+                </div>
+            </div>
+        </div>
+
+        <div id="view-props" class="panel-content hidden">
+            <div id="no-selection">Select an element on the canvas to edit.</div>
+            <div id="props-form" class="hidden">
+                <div class="prop-group">
+                    <label>ID / Data Key</label>
+                    <input type="text" id="prop-id" onchange="updateProp('id', this.value)">
+                </div>
+                
+                <div class="prop-row">
+                    <div class="prop-group" style="flex:1">
+                        <label>X Position (%)</label>
+                        <input type="number" id="prop-x" onchange="updateProp('x', this.value)">
+                    </div>
+                    <div class="prop-group" style="flex:1">
+                        <label>Y Position (%)</label>
+                        <input type="number" id="prop-y" onchange="updateProp('y', this.value)">
+                    </div>
+                </div>
+
+                <div class="prop-row">
+                    <div class="prop-group" style="flex:1">
+                        <label>Width (%)</label>
+                        <input type="number" id="prop-w" onchange="updateProp('w', this.value)">
+                    </div>
+                    <div class="prop-group" style="flex:1">
+                        <label>Height (%)</label>
+                        <input type="number" id="prop-h" onchange="updateProp('h', this.value)">
+                    </div>
+                </div>
+
+                <div class="checkbox-row" id="pg-ratio">
+                    <input type="checkbox" id="prop-ratio" onchange="updateProp('keepRatio', this.checked)">
+                    <label style="margin:0; display:inline;">Force 1:1 (Square/Circle)</label>
+                </div>
+
+                <div class="prop-group" id="pg-text">
+                    <label>Label Text</label>
+                    <input type="text" id="prop-text" onchange="updateProp('text', this.value)">
+                </div>
+
+                <div class="prop-group" id="pg-color">
+                    <label>Color</label>
+                    <input type="color" id="prop-color" onchange="updateProp('color', this.value)" style="height:40px;">
+                </div>
+
+                <div id="pg-btn-specifics" class="hidden">
+                    <div class="prop-group">
+                        <label>Shape</label>
+                        <select id="prop-shape" onchange="updateProp('shape', this.value)">
+                            <option value="rect">Rectangle</option>
+                            <option value="ellipse">Ellipse / Circle</option>
+                        </select>
+                    </div>
+                    <div class="prop-group">
+                        <label>Behavior</label>
+                        <select id="prop-btn-type" onchange="updateProp('btnType', this.value)">
+                            <option value="press">Press (Momentary)</option>
+                            <option value="toggle">Toggle (On/Off)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="prop-group hidden" id="pg-joy-type">
+                    <label>Joystick Type</label>
+                    <select id="prop-joy-type" onchange="updateProp('joyType', this.value)">
+                        <option value="static">Static (Centered in Box)</option>
+                        <option value="dynamic">Dynamic (Spawns on Touch)</option>
+                    </select>
+                    <div style="font-size:0.7rem; color:#666; margin-top:5px; line-height:1.2;">
+                        <b>Dynamic:</b> Box is touch zone. Joystick appears at touch point.
+                    </div>
+                </div>
+
+                <button class="action-btn btn-danger" onclick="deleteSelected()">Delete Element</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="controls-panel hidden" id="panel-play" style="height: 15vh; min-height: 100px;">
+        <div class="panel-content">
+            <div style="font-size:0.8rem; color:#888; margin-bottom:5px;">Output Stream:</div>
+            <div id="console-log" style="font-family:monospace; font-size:0.75rem; color:#0f0;">Ready.</div>
+        </div>
+    </div>
+</div>
+
+<div id="json-modal" class="hidden">
+    <div style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+        <h3 style="color:white; margin-bottom: 10px;">Layout Data (JSON)</h3>
+        <textarea id="json-textarea"></textarea>
+        <div class="modal-controls">
+            <button class="action-btn btn-success" onclick="importJSON()">Import</button>
+            <button class="action-btn" onclick="toggleExport()">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* --- STATE --- */
+    let elements = [];
+    let selectedId = null;
+    let mode = 'edit'; 
+    let nextId = 1;
+    const CANVAS_RATIO = 16 / 9; // Width is 1.77x larger than Height per percent
+
+    const saved = localStorage.getItem('remoteLayoutV3');
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            elements = data.elements || [];
+            nextId = data.nextId || 1;
+        } catch(e) {}
+    }
+
+    const canvas = document.getElementById('remote-canvas');
+    const propsForm = document.getElementById('props-form');
+    const noSelDiv = document.getElementById('no-selection');
+    const consoleLog = document.getElementById('console-log');
+
+    renderElements();
+
+    /* --- CORE --- */
+
+    function setMode(newMode) {
+        mode = newMode;
+        selectedId = null;
+        
+        document.getElementById('btn-edit').className = `mode-btn ${mode === 'edit' ? 'active' : ''}`;
+        document.getElementById('btn-play').className = `mode-btn ${mode === 'play' ? 'active' : ''}`;
+        document.getElementById('panel-edit').classList.toggle('hidden', mode !== 'edit');
+        document.getElementById('panel-play').classList.toggle('hidden', mode !== 'play');
+        canvas.classList.toggle('play-mode', mode === 'play');
+
+        renderElements();
+    }
+
+    function switchTab(tab) {
+        document.getElementById('tab-add').className = `tab ${tab === 'add' ? 'active' : ''}`;
+        document.getElementById('tab-props').className = `tab ${tab === 'props' ? 'active' : ''}`;
+        document.getElementById('view-add').classList.toggle('hidden', tab !== 'add');
+        document.getElementById('view-props').classList.toggle('hidden', tab !== 'props');
+    }
+
+    function addElement(type) {
+        const id = 'el_' + Date.now();
+        const base = {
+            id: id, type: type,
+            x: 40, y: 40, w: 20, h: 20, 
+            text: 'Button', color: '#3b82f6',
+            btnType: 'press', joyType: 'static',
+            shape: 'rect', keepRatio: false, val: 0
+        };
+
+        if (type === 'button') { base.w = 20; base.h = 15; base.text = "BTN " + nextId++; }
+        if (type === 'joystick') { base.w = 30; base.h = 40; base.joyType = 'static'; }
+        if (type === 'slider') { base.w = 40; base.h = 10; }
+        if (type === 'slider-v') { base.type = 'slider'; base.vertical = true; base.w = 10; base.h = 40; }
+        if (type === 'label') { base.w = 30; base.h = 10; base.text = "Label"; base.color = "#ffffff"; }
+
+        elements.push(base);
+        saveState();
+        selectElement(id);
+        renderElements();
+    }
+
+    function renderElements() {
+        canvas.innerHTML = '';
+        
+        elements.forEach(el => {
+            const dom = document.createElement('div');
+            dom.id = el.id;
+            dom.className = `element ${selectedId === el.id && mode === 'edit' ? 'selected' : ''}`;
+            
+            dom.style.left = el.x + '%';
+            dom.style.top = el.y + '%';
+            dom.style.width = el.w + '%';
+            dom.style.height = el.h + '%';
+
+            // Type Rendering
+            if (el.type === 'button') {
+                dom.classList.add('el-btn');
+                dom.style.backgroundColor = el.color;
+                dom.innerText = el.text;
+                if (el.shape === 'ellipse') dom.classList.add('shape-ellipse');
+                if(mode === 'play' && el.btnType === 'toggle' && el.val) dom.classList.add('toggled');
+            } 
+            else if (el.type === 'joystick') {
+                dom.classList.add('el-joystick');
+                if (el.joyType === 'dynamic') dom.classList.add('dynamic');
+                
+                const visual = document.createElement('div');
+                visual.className = 'joy-visual';
+                visual.innerHTML = `<div class="joy-base"></div><div class="joy-head"></div>`;
+                dom.appendChild(visual);
+            }
+            else if (el.type === 'slider') {
+                dom.classList.add('el-slider');
+                if (el.vertical) dom.classList.add('vertical');
+                const track = document.createElement('div');
+                track.className = 'slider-track';
+                const handle = document.createElement('div');
+                handle.className = 'slider-handle';
+                handle.style.backgroundColor = el.color;
+                
+                const val = el.val || 0;
+                if(el.vertical) handle.style.top = (100 - (val * 100)) + '%';
+                else handle.style.left = (val * 100) + '%';
+                track.appendChild(handle);
+                dom.appendChild(track);
+            }
+            else if (el.type === 'label') {
+                dom.classList.add('el-label');
+                dom.style.color = el.color;
+                dom.innerText = el.text;
+                dom.style.justifyContent = 'flex-start';
+                dom.style.alignItems = 'flex-start';
+            }
+
+            // Edit Mode: Add Resize Handle
+            if (mode === 'edit' && selectedId === el.id) {
+                const handle = document.createElement('div');
+                handle.className = 'resize-handle';
+                handle.onmousedown = (e) => startResize(e, el.id);
+                handle.ontouchstart = (e) => startResize(e, el.id);
+                dom.appendChild(handle);
+            }
+
+            // Events
+            if (mode === 'edit') {
+                // Drag body
+                dom.onmousedown = (e) => { if(e.target === dom || e.target.parentNode === dom) startDrag(e, el.id); };
+                dom.ontouchstart = (e) => { if(e.target === dom || e.target.parentNode === dom) startDrag(e, el.id); };
+            } else {
+                setupPlayEvents(dom, el);
+            }
+
+            canvas.appendChild(dom);
+        });
+    }
+
+    /* --- EDIT: PROPS --- */
+
+    function selectElement(id) {
+        selectedId = id;
+        renderElements();
+        switchTab('props');
+        populateProps();
+    }
+
+    function populateProps() {
+        const el = elements.find(e => e.id === selectedId);
+        if (!el) {
+            propsForm.classList.add('hidden');
+            noSelDiv.classList.remove('hidden');
+            return;
+        }
+
+        noSelDiv.classList.add('hidden');
+        propsForm.classList.remove('hidden');
+
+        document.getElementById('prop-id').value = el.id;
+        document.getElementById('prop-x').value = Math.round(el.x);
+        document.getElementById('prop-y').value = Math.round(el.y);
+        document.getElementById('prop-w').value = Math.round(el.w);
+        document.getElementById('prop-h').value = Math.round(el.h);
+        document.getElementById('prop-color').value = el.color;
+        document.getElementById('prop-ratio').checked = el.keepRatio === true;
+        
+        document.getElementById('pg-ratio').classList.toggle('hidden', el.type === 'label');
+
+        const showText = ['button', 'label'].includes(el.type);
+        document.getElementById('pg-text').classList.toggle('hidden', !showText);
+        if(showText) document.getElementById('prop-text').value = el.text;
+
+        document.getElementById('pg-btn-specifics').classList.toggle('hidden', el.type !== 'button');
+        if(el.type === 'button') {
+            document.getElementById('prop-btn-type').value = el.btnType;
+            document.getElementById('prop-shape').value = el.shape || 'rect';
+        }
+
+        document.getElementById('pg-joy-type').classList.toggle('hidden', el.type !== 'joystick');
+        if(el.type === 'joystick') document.getElementById('prop-joy-type').value = el.joyType;
+    }
+
+    function updateProp(key, value) {
+        const el = elements.find(e => e.id === selectedId);
+        if (!el) return;
+
+        if (['x','y','w','h'].includes(key)) value = parseFloat(value);
+        el[key] = value;
+
+        // Apply Ratio Immediately if checked
+        if (key === 'keepRatio' && value === true) {
+            // Force Height based on Width
+            el.h = el.w * CANVAS_RATIO;
+        }
+
+        saveState();
+        renderElements();
+        // Re-populate to show updated calculated values
+        if(key === 'keepRatio') populateProps();
+    }
+
+    function deleteSelected() {
+        elements = elements.filter(e => e.id !== selectedId);
+        selectedId = null;
+        saveState();
+        renderElements();
+        switchTab('add');
+    }
+
+    /* --- EDIT: DRAG & RESIZE --- */
+    
+    let dragOp = null; // { type: 'move'|'resize', id, startX, startY, startVal... }
+
+    function getEventPos(e) {
+        return {
+            x: e.touches ? e.touches[0].clientX : e.clientX,
+            y: e.touches ? e.touches[0].clientY : e.clientY
+        };
+    }
+
+    function startDrag(e, id) {
+        e.preventDefault();
+        e.stopPropagation();
+        const el = elements.find(x => x.id === id);
+        selectElement(id);
+        const pos = getEventPos(e);
+        
+        dragOp = {
+            type: 'move',
+            id: id,
+            startX: pos.x,
+            startY: pos.y,
+            startLeft: el.x,
+            startTop: el.y,
+            el: el
+        };
+
+        window.addEventListener('mousemove', onOpMove);
+        window.addEventListener('touchmove', onOpMove, {passive:false});
+        window.addEventListener('mouseup', endOp);
+        window.addEventListener('touchend', endOp);
+    }
+
+    function startResize(e, id) {
+        e.preventDefault();
+        e.stopPropagation();
+        const el = elements.find(x => x.id === id);
+        selectElement(id);
+        const pos = getEventPos(e);
+
+        dragOp = {
+            type: 'resize',
+            id: id,
+            startX: pos.x,
+            startY: pos.y,
+            startW: el.w,
+            startH: el.h,
+            el: el
+        };
+
+        window.addEventListener('mousemove', onOpMove);
+        window.addEventListener('touchmove', onOpMove, {passive:false});
+        window.addEventListener('mouseup', endOp);
+        window.addEventListener('touchend', endOp);
+    }
+
+    function onOpMove(e) {
+        if (!dragOp) return;
+        e.preventDefault();
+        const pos = getEventPos(e);
+        const rect = canvas.getBoundingClientRect();
+
+        // Delta %
+        const dxPct = ((pos.x - dragOp.startX) / rect.width) * 100;
+        const dyPct = ((pos.y - dragOp.startY) / rect.height) * 100;
+
+        if (dragOp.type === 'move') {
+            dragOp.el.x = dragOp.startLeft + dxPct;
+            dragOp.el.y = dragOp.startTop + dyPct;
+            
+            // Bounds check could go here
+            dragOp.el.x = Math.max(0, Math.min(100 - dragOp.el.w, dragOp.el.x));
+            dragOp.el.y = Math.max(0, Math.min(100 - dragOp.el.h, dragOp.el.y));
+        } 
+        else if (dragOp.type === 'resize') {
+            let newW = Math.max(5, dragOp.startW + dxPct);
+            let newH = Math.max(5, dragOp.startH + dyPct);
+
+            if (dragOp.el.keepRatio) {
+                // Determine which axis had larger movement intent, or just drive by Width
+                // Simple approach: Drive by Width
+                newH = newW * CANVAS_RATIO;
+            }
+
+            dragOp.el.w = newW;
+            dragOp.el.h = newH;
+        }
+
+        // Live visual update
+        const dom = document.getElementById(dragOp.id);
+        dom.style.left = dragOp.el.x + '%';
+        dom.style.top = dragOp.el.y + '%';
+        dom.style.width = dragOp.el.w + '%';
+        dom.style.height = dragOp.el.h + '%';
+
+        // Update inputs
+        document.getElementById('prop-x').value = Math.round(dragOp.el.x);
+        document.getElementById('prop-y').value = Math.round(dragOp.el.y);
+        document.getElementById('prop-w').value = Math.round(dragOp.el.w);
+        document.getElementById('prop-h').value = Math.round(dragOp.el.h);
+    }
+
+    function endOp() {
+        dragOp = null;
+        window.removeEventListener('mousemove', onOpMove);
+        window.removeEventListener('touchmove', onOpMove);
+        window.removeEventListener('mouseup', endOp);
+        window.removeEventListener('touchend', endOp);
+        saveState();
+    }
+
+
+    /* --- PLAY MODE LOGIC --- */
+
+    function log(msg) {
+        consoleLog.innerText = `> ${msg}\n` + consoleLog.innerText.substring(0, 200);
+    }
+
+    function setupPlayEvents(dom, el) {
+        if (el.type === 'button') {
+            const press = (e) => {
+                e.preventDefault();
+                if (el.btnType === 'toggle') {
+                    el.val = !el.val;
+                    dom.classList.toggle('toggled', el.val);
+                    log(`${el.id}: ${el.val ? 'ON' : 'OFF'}`);
+                } else {
+                    dom.style.transform = "scale(0.95)";
+                    log(`${el.id}: PRESSED`);
+                }
+            };
+            const release = (e) => {
+                if (el.btnType === 'press') {
+                    dom.style.transform = "scale(1)";
+                    log(`${el.id}: RELEASED`);
+                }
+            };
+            dom.onmousedown = press; dom.ontouchstart = press;
+            dom.onmouseup = release; dom.ontouchend = release;
+        }
+        else if (el.type === 'slider') {
+            const moveSlider = (e) => {
+                e.preventDefault();
+                const rect = dom.getBoundingClientRect();
+                const pos = getEventPos(e);
+                let val = 0;
+                if(el.vertical) {
+                    val = 1 - ((pos.y - rect.top) / rect.height);
+                } else {
+                    val = (pos.x - rect.left) / rect.width;
+                }
+                el.val = Math.max(0, Math.min(1, val));
+                const handle = dom.querySelector('.slider-handle');
+                if(el.vertical) handle.style.top = (100 - (el.val * 100)) + '%';
+                else handle.style.left = (el.val * 100) + '%';
+                log(`${el.id}: ${el.val.toFixed(2)}`);
+            };
+
+            dom.onmousedown = (e) => {
+                document.addEventListener('mousemove', moveSlider);
+                document.addEventListener('mouseup', () => document.removeEventListener('mousemove', moveSlider));
+                moveSlider(e);
+            };
+            dom.ontouchstart = (e) => {
+                document.addEventListener('touchmove', moveSlider, {passive:false});
+                document.addEventListener('touchend', () => document.removeEventListener('touchmove', moveSlider));
+                moveSlider(e);
+            };
+        }
+        else if (el.type === 'joystick') {
+            const visual = dom.querySelector('.joy-visual');
+            const head = dom.querySelector('.joy-head');
+            let jActive = false;
+            let center = {x:0, y:0};
+            let radius = 40; 
+
+            const startJoy = (e) => {
+                e.preventDefault();
+                jActive = true;
+                const rect = dom.getBoundingClientRect();
+                const pos = getEventPos(e);
+
+                if (el.joyType === 'dynamic') {
+                    dom.classList.add('active');
+                    // Dynamic: Center visual on finger relative to Zone
+                    let relX = pos.x - rect.left;
+                    let relY = pos.y - rect.top;
+                    
+                    // Clamp visual spawn to zone bounds? (Optional, skipping for feel)
+                    visual.style.left = relX + 'px';
+                    visual.style.top = relY + 'px';
+                    
+                    center = { x: pos.x, y: pos.y };
+                } else {
+                    // Static
+                    center = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+                }
+
+                document.addEventListener('mousemove', moveJoy);
+                document.addEventListener('touchmove', moveJoy, {passive:false});
+                document.addEventListener('mouseup', endJoy);
+                document.addEventListener('touchend', endJoy);
+            };
+
+            const moveJoy = (e) => {
+                if(!jActive) return;
+                const pos = getEventPos(e);
+                let dx = pos.x - center.x;
+                let dy = pos.y - center.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist > radius) {
+                    const ratio = radius / dist;
+                    dx *= ratio;
+                    dy *= ratio;
+                }
+
+                head.style.transform = `translate(${dx}px, ${dy}px)`;
+
+                if(Math.random() > 0.8) {
+                    let xVal = dx/radius; let yVal = -(dy/radius);
+                    log(`${el.id}: ${xVal.toFixed(1)}, ${yVal.toFixed(1)}`);
+                }
+            };
+
+            const endJoy = () => {
+                jActive = false;
+                dom.classList.remove('active');
+                head.style.transform = `translate(0,0)`;
+                document.removeEventListener('mousemove', moveJoy);
+                document.removeEventListener('touchmove', moveJoy);
+                document.removeEventListener('mouseup', endJoy);
+                document.removeEventListener('touchend', endJoy);
+            };
+
+            dom.onmousedown = startJoy;
+            dom.ontouchstart = startJoy;
+        }
+    }
+
+    /* --- DATA UTILS --- */
+
+    function saveState() {
+        const data = { elements, nextId };
+        localStorage.setItem('remoteLayoutV3', JSON.stringify(data));
+    }
+
+    function toggleExport() {
+        const modal = document.getElementById('json-modal');
+        const txt = document.getElementById('json-textarea');
+        if (modal.classList.contains('hidden')) {
+            modal.classList.remove('hidden');
+            txt.value = JSON.stringify({elements, nextId}, null, 2);
+        } else {
+            modal.classList.add('hidden');
+        }
+    }
+
+    function importJSON() {
+        try {
+            const data = JSON.parse(document.getElementById('json-textarea').value);
+            if(data.elements) {
+                elements = data.elements;
+                nextId = data.nextId || 100;
+                saveState();
+                renderElements();
+                toggleExport();
+            }
+        } catch(e) { alert("Invalid JSON"); }
+    }
+</script>
+</body>
+</html>
