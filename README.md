@@ -47,4 +47,5 @@
 
 ---
 
-![Project Map](./assets/project-map.png)
+
+![Project Map](./project-map.png)
